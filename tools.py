@@ -126,7 +126,7 @@ def search_listings(
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
 
-def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
+def suggest_outfit(new_item: dict, wardrobe: dict) -> dict:
     """
     Given a thrifted item and the user's wardrobe, suggest 1–2 complete outfits.
 
@@ -136,23 +136,62 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
                   wardrobe item dicts. May be empty — handle this gracefully.
 
     Returns:
-        A non-empty string with outfit suggestions.
-        If the wardrobe is empty, offer general styling advice for the item
-        rather than raising an exception or returning an empty string.
-
-    TODO:
-        1. Check whether wardrobe['items'] is empty.
-        2. If empty: call the LLM with a prompt for general styling ideas
-           (what kinds of items pair well, what vibe it suits, etc.).
-        3. If not empty: format the wardrobe items into a prompt and ask
-           the LLM to suggest specific outfit combinations using the new item
-           and named pieces from the wardrobe.
-        4. Return the LLM's response as a string.
-
-    Before writing code, fill in the Tool 2 section of planning.md.
+        A dictionary containing:
+        - 'items' (list[dict]): Selected wardrobe items + the new item.
+        - 'description' (str): Detailed outfit suggestions and styling tips.
     """
-    # Replace this with your implementation
-    return ""
+    import json
+
+    wardrobe_items = wardrobe.get("items", [])
+    client = _get_groq_client()
+
+    system_prompt = (
+        "You are a professional fashion stylist. Given a new secondhand clothing item and the user's current wardrobe, "
+        "your goal is to suggest 1-2 complete outfits.\n"
+        "You must return a JSON object with exactly two keys:\n"
+        "1. \"items\": A list of dictionaries. This list must include the exact dictionaries of the selected "
+        "wardrobe items, plus the new_item dictionary itself.\n"
+        "2. \"description\": A detailed text description (string) of the outfit combinations, including styling tips, "
+        "vibes, and how to wear them.\n\n"
+        "If the wardrobe items list is empty, set \"items\" to a list containing only the new_item dictionary, and "
+        "provide general styling and pairing advice in the \"description\"."
+    )
+
+    user_prompt = f"""
+New Item:
+{json.dumps(new_item, indent=2)}
+
+User Wardrobe Items:
+{json.dumps(wardrobe_items, indent=2)}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.7,
+        )
+
+        content = response.choices[0].message.content
+        result = json.loads(content)
+
+        # Basic validations
+        if "items" not in result or not isinstance(result["items"], list):
+            result["items"] = [new_item]
+        if "description" not in result:
+            result["description"] = "Try styling this item with classic basics."
+
+        return result
+    except Exception as e:
+        # Fallback styling recommendation on any error
+        return {
+            "items": [new_item],
+            "description": f"Styled with basic pieces. Vibe: casual classic. Try styling this {new_item.get('title', 'clothing piece')} with standard denim and neutral shoes."
+        }
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────

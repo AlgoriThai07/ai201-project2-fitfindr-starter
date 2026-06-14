@@ -1,4 +1,5 @@
-from tools import search_listings
+from tools import search_listings, suggest_outfit
+from utils.data_loader import get_example_wardrobe, get_empty_wardrobe
 
 def test_search_returns_results():
     results = search_listings("vintage graphic tee", size=None, max_price=50)
@@ -28,4 +29,46 @@ def test_search_keyword_sorting():
     # The first item should contain the most overlapping keywords (e.g. "Vintage", "Levi's", "Jeans")
     top_item = results[0]
     assert "vintage" in top_item["title"].lower() or "levi" in top_item["title"].lower()
+
+def test_suggest_outfit_happy_path():
+    new_item = {
+        "id": "lst_006",
+        "title": "Graphic Tee — 2003 Tour Bootleg Style",
+        "description": "Vintage-style bootleg tee with faded graphic. Slightly boxy fit.",
+        "category": "tops",
+        "price": 24.00,
+        "size": "L"
+    }
+    wardrobe = get_example_wardrobe()
+    outfit = suggest_outfit(new_item, wardrobe)
+    
+    assert isinstance(outfit, dict)
+    assert "items" in outfit
+    assert "description" in outfit
+    assert isinstance(outfit["items"], list)
+    assert len(outfit["items"]) > 0
+    assert any(item["id"] == new_item["id"] for item in outfit["items"] if "id" in item)
+    assert isinstance(outfit["description"], str)
+    assert len(outfit["description"]) > 0
+
+def test_suggest_outfit_empty_wardrobe():
+    new_item = {
+        "id": "lst_006",
+        "title": "Graphic Tee — 2003 Tour Bootleg Style",
+        "description": "Vintage-style bootleg tee with faded graphic. Slightly boxy fit.",
+        "category": "tops",
+        "price": 24.00,
+        "size": "L"
+    }
+    wardrobe = get_empty_wardrobe()
+    outfit = suggest_outfit(new_item, wardrobe)
+    
+    assert isinstance(outfit, dict)
+    assert "items" in outfit
+    assert "description" in outfit
+    assert len(outfit["items"]) == 1
+    assert outfit["items"][0]["id"] == new_item["id"]
+    assert isinstance(outfit["description"], str)
+    assert len(outfit["description"]) > 0
+
 
