@@ -32,19 +32,109 @@ def handle_query(user_query: str, wardrobe_choice: str) -> tuple[str, str, str]:
         A tuple of three strings:
             (listing_text, outfit_suggestion, fit_card)
         Each string maps to one of the three output panels in the UI.
-
-    TODO:
-        1. Guard against an empty query (return early with an error message).
-        2. Select the wardrobe based on wardrobe_choice.
-        3. Call run_agent() with the query and selected wardrobe.
-        4. If session["error"] is set, return the error in the first panel
-           and empty strings for the other two.
-        5. Otherwise, format session["selected_item"] into a readable listing_text
-           string and return it along with session["outfit_suggestion"] and
-           session["fit_card"].
     """
-    # TODO: implement this function
-    return "Agent not yet implemented.", "", ""
+    # 1. Guard against an empty query
+    user_query = user_query.strip() if user_query else ""
+    if not user_query:
+        return "Error: Please enter a description of what you are looking for.", "", ""
+
+    # 2. Select the wardrobe based on wardrobe_choice
+    if wardrobe_choice == "Example wardrobe":
+        wardrobe = get_example_wardrobe()
+    else:
+        wardrobe = get_empty_wardrobe()
+
+    # 3. Call run_agent() with the query and selected wardrobe
+    session = run_agent(user_query, wardrobe)
+
+    # 4. If session["error"] is set, return the error in the first panel and empty strings
+    if session.get("error"):
+        error_msg = session["error"]
+        if session.get("fallback_adjusted"):
+            error_msg = f"⚠️ {session['fallback_adjusted']}\n\n🛑 {error_msg}"
+        else:
+            error_msg = f"🛑 {error_msg}"
+        return error_msg, "", ""
+
+    # 5. Format session["selected_item"] into a readable listing_text
+    item = session.get("selected_item")
+    if not item:
+        return "Error: No item selected by the agent.", "", ""
+
+    title = item.get("title", "Unknown Title")
+    brand = item.get("brand") or "Generic"
+    size = item.get("size", "N/A")
+    condition = item.get("condition", "N/A")
+    price = item.get("price", 0.0)
+    platform = item.get("platform", "N/A")
+    description = item.get("description", "")
+    colors = ", ".join(item.get("colors", []))
+    tags = ", ".join(item.get("style_tags", []))
+
+    # Format price comparison metrics if available
+    price_info = ""
+    comp = session.get("price_comparison")
+    if comp:
+        rating = comp.get("deal_rating", "Fair Price")
+        diff = comp.get("difference_percent", 0.0)
+        avg = comp.get("average_price", 0.0)
+        if diff < 0:
+            price_info = f"💰 Deal Rating: {rating} ({abs(diff)}% cheaper than comparable average of ${avg:.2f})"
+        elif diff > 0:
+            price_info = f"💰 Deal Rating: {rating} ({diff}% more expensive than comparable average of ${avg:.2f})"
+        else:
+            price_info = f"💰 Deal Rating: {rating} (Matches comparable average of ${avg:.2f})"
+    else:
+        price_info = "💰 Deal Rating: No comparable items found to rate price."
+
+    fallback_note = ""
+    if session.get("fallback_adjusted"):
+        fallback_note = f"⚠️ Note: {session['fallback_adjusted']}\n\n"
+
+    listing_text = (
+        f"{fallback_note}"
+        f"🛍️ Title: {title}\n"
+        f"🏷️ Brand: {brand}\n"
+        f"📏 Size: {size} | 👕 Condition: {condition}\n"
+        f"💵 Price: ${price:.2f} on {platform.capitalize()}\n"
+        f"{price_info}\n\n"
+        f"🎨 Colors: {colors}\n"
+        f"✨ Style Tags: {tags}\n\n"
+        f"📝 Description: {description}"
+    )
+
+    # Format outfit suggestion
+    outfit = session.get("outfit_suggestion")
+    if not outfit or not isinstance(outfit, dict):
+        outfit_text = "No styling suggestion could be generated."
+    else:
+        stylist_notes = outfit.get("description", "No styling notes provided.")
+        items_list = outfit.get("items", [])
+        
+        # Build recommended items list
+        formatted_items = []
+        for idx, outfit_item in enumerate(items_list, 1):
+            if outfit_item.get("id") == item.get("id"):
+                formatted_items.append(
+                    f"🔥 Find #{idx}: {outfit_item.get('title', 'This listing')} (${outfit_item.get('price', 0.0):.2f})"
+                )
+            else:
+                formatted_items.append(
+                    f"👖 Wardrobe #{idx}: {outfit_item.get('name', 'Wardrobe piece')} ({outfit_item.get('category', 'item')})"
+                )
+        
+        items_text = "\n".join(formatted_items)
+        outfit_text = (
+            f"👩‍🎤 Stylist Recommendations:\n"
+            f"{stylist_notes}\n\n"
+            f"📦 Items in this look:\n"
+            f"{items_text}"
+        )
+
+    # Fit card caption
+    fit_card_text = session.get("fit_card") or "No fit card was generated."
+
+    return listing_text, outfit_text, fit_card_text
 
 
 # ── interface ─────────────────────────────────────────────────────────────────
