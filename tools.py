@@ -196,32 +196,132 @@ User Wardrobe Items:
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
 
-def create_fit_card(outfit: str, new_item: dict) -> str:
+def create_fit_card(outfit: dict | str, new_item: dict) -> str:
     """
     Generate a short, shareable outfit caption for the thrifted find.
 
     Args:
-        outfit:   The outfit suggestion string from suggest_outfit().
+        outfit:   The outfit suggestion (dict or string) from suggest_outfit().
         new_item: The listing dict for the thrifted item.
 
     Returns:
         A 2–4 sentence string usable as an Instagram/TikTok caption.
         If outfit is empty or missing, return a descriptive error message
         string — do NOT raise an exception.
-
-    The caption should:
-    - Feel casual and authentic (like a real OOTD post, not a product description)
-    - Mention the item name, price, and platform naturally (once each)
-    - Capture the outfit vibe in specific terms
-    - Sound different each time for different inputs (use higher LLM temperature)
-
-    TODO:
-        1. Guard against an empty or whitespace-only outfit string.
-        2. Build a prompt that gives the LLM the item details and the outfit,
-           and asks for a caption matching the style guidelines above.
-        3. Call the LLM and return the response.
-
-    Before writing code, fill in the Tool 3 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    # 1. Guard against empty/missing inputs
+    if not outfit:
+        return "Error: Could not generate a fit card due to missing outfit details."
+
+    description = ""
+    if isinstance(outfit, dict):
+        description = outfit.get("description", "").strip()
+    elif isinstance(outfit, str):
+        description = outfit.strip()
+
+    if not description:
+        return "Error: Could not generate a fit card due to empty styling suggestions."
+
+    title = new_item.get("title", "thrift find")
+    price = new_item.get("price", "great price")
+    platform = new_item.get("platform", "thrift shop")
+
+    client = _get_groq_client()
+
+    system_prompt = (
+        "You are a trendy social media content creator writing a short, casual, and authentic "
+        "OOTD caption (Instagram/TikTok style) showcasing a thrifted find.\n\n"
+        "Guidelines:\n"
+        "- Write exactly 2-4 sentences.\n"
+        "- Make it feel casual, aesthetic, and conversational (lowercase style, minor emojis, real slang, NOT a product description).\n"
+        "- You MUST naturally mention the item title, price, and platform exactly once each.\n"
+        "- Incorporate the styling suggestion/vibe naturally."
+    )
+
+    user_prompt = f"""
+New Item Details:
+- Title: {title}
+- Price: ${price}
+- Platform: {platform}
+- Description: {new_item.get('description', '')}
+
+Styling Suggestion:
+{description}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            # Use high temperature to ensure different captions each time
+            temperature=1.0,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error calling Groq API: {e}")
+        # Fallback caption that includes all required fields
+        return f"obsessed with my new {title} from {platform} for ${price}! styling it with some neutral basics today 🖤"
+
+
+# ── Tool 4: compare_prices [STRETCH] ──────────────────────────────────────────
+
+def compare_prices(new_item: dict, listings: list[dict]) -> dict | None:
+    """
+    Compare the price of the selected item with the average price of comparable
+    listings in the dataset (matching the same category and style tags).
+
+    Args:
+        new_item: The selected listing dict.
+        listings: The full list of listing dicts to compare against.
+
+    Returns:
+        A dict with comparison statistics, or None if no comparable items exist.
+    """
+    category = new_item.get("category", "")
+    style_tags = {t.lower() for t in new_item.get("style_tags", [])}
+    new_item_id = new_item.get("id")
+
+    # 1. Try to find items in the same category sharing at least one style tag (excluding the new item itself)
+    comparable = [
+        item for item in listings
+        if item.get("category") == category
+        and item.get("id") != new_item_id
+        and any(t.lower() in style_tags for t in item.get("style_tags", []))
+    ]
+
+    # 2. Fall back to matching only by category if no style tag matches are found
+    if not comparable:
+        comparable = [
+            item for item in listings
+            if item.get("category") == category
+            and item.get("id") != new_item_id
+        ]
+
+    if not comparable:
+        return None
+
+    # 3. Calculate statistics
+    avg_price = sum(item.get("price", 0.0) for item in comparable) / len(comparable)
+    new_price = new_item.get("price", 0.0)
+
+    if avg_price > 0:
+        diff_pct = ((new_price - avg_price) / avg_price) * 100
+    else:
+        diff_pct = 0.0
+
+    # 4. Rating threshold
+    if diff_pct <= -10.0:
+        deal_rating = "Good Deal"
+    elif diff_pct >= 10.0:
+        deal_rating = "Overpriced"
+    else:
+        deal_rating = "Fair Price"
+
+    return {
+        "average_price": round(avg_price, 2),
+        "difference_percent": round(diff_pct, 1),
+        "deal_rating": deal_rating
+    }

@@ -1,5 +1,5 @@
-from tools import search_listings, suggest_outfit
-from utils.data_loader import get_example_wardrobe, get_empty_wardrobe
+from tools import search_listings, suggest_outfit, create_fit_card, compare_prices
+from utils.data_loader import get_example_wardrobe, get_empty_wardrobe, load_listings
 
 def test_search_returns_results():
     results = search_listings("vintage graphic tee", size=None, max_price=50)
@@ -70,5 +70,95 @@ def test_suggest_outfit_empty_wardrobe():
     assert outfit["items"][0]["id"] == new_item["id"]
     assert isinstance(outfit["description"], str)
     assert len(outfit["description"]) > 0
+
+def test_create_fit_card_happy_path():
+    new_item = {
+        "id": "lst_006",
+        "title": "Graphic Tee",
+        "description": "Vintage bootleg tee.",
+        "category": "tops",
+        "price": 24.00,
+        "size": "L",
+        "platform": "depop"
+    }
+    outfit = {
+        "items": [],
+        "description": "Pair it with wide leg jeans and white sneakers."
+    }
+    caption = create_fit_card(outfit, new_item)
+    assert isinstance(caption, str)
+    assert len(caption) > 0
+    # The caption should contain key terms naturally
+    assert "depop" in caption.lower()
+    assert "24" in caption.lower()
+
+def test_create_fit_card_variance():
+    new_item = {
+        "id": "lst_006",
+        "title": "Graphic Tee",
+        "description": "Vintage bootleg tee.",
+        "category": "tops",
+        "price": 24.00,
+        "size": "L",
+        "platform": "depop"
+    }
+    outfit = {
+        "items": [],
+        "description": "Pair it with wide leg jeans and white sneakers."
+    }
+    caption1 = create_fit_card(outfit, new_item)
+    caption2 = create_fit_card(outfit, new_item)
+    # They should vary due to high temperature
+    assert caption1 != caption2
+
+def test_create_fit_card_empty_guard():
+    new_item = {
+        "id": "lst_006",
+        "title": "Graphic Tee",
+        "description": "Vintage bootleg tee.",
+        "category": "tops",
+        "price": 24.00,
+        "size": "L",
+        "platform": "depop"
+    }
+    error_caption1 = create_fit_card("", new_item)
+    error_caption2 = create_fit_card({}, new_item)
+    
+    assert "error" in error_caption1.lower()
+    assert "error" in error_caption2.lower()
+
+def test_compare_prices_deal():
+    listings = load_listings()
+    test_item = {
+        "id": "test_001",
+        "title": "Cheap Jeans",
+        "category": "bottoms",
+        "price": 10.00,
+        "style_tags": ["vintage"]
+    }
+    result = compare_prices(test_item, listings)
+    assert result is not None
+    assert result["deal_rating"] == "Good Deal"
+    assert result["average_price"] > 10.00
+    assert result["difference_percent"] < 0
+
+def test_compare_prices_overpriced():
+    listings = load_listings()
+    test_item = {
+        "id": "test_002",
+        "title": "Expensive Jeans",
+        "category": "bottoms",
+        "price": 500.00,
+        "style_tags": ["vintage"]
+    }
+    result = compare_prices(test_item, listings)
+    assert result is not None
+    assert result["deal_rating"] == "Overpriced"
+    assert result["difference_percent"] > 0
+
+def test_compare_prices_no_comparable():
+    result = compare_prices({"id": "test_003", "category": "random_category", "price": 50.0}, [])
+    assert result is None
+
 
 
