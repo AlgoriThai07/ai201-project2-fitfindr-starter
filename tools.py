@@ -59,18 +59,69 @@ def search_listings(
     Each listing dict has the following fields:
         id, title, description, category, style_tags (list), size,
         condition, price (float), colors (list), brand, platform
-
-    TODO:
-        1. Load all listings with load_listings().
-        2. Filter by max_price and size (if provided).
-        3. Score each remaining listing by keyword overlap with `description`.
-        4. Drop any listings with a score of 0 (no relevant matches).
-        5. Sort by score, highest first, and return the listing dicts.
-
-    Before writing code, fill in the Tool 1 section of planning.md.
     """
-    # Replace this with your implementation
-    return []
+    import re
+
+    # Helper function for matching sizes
+    def size_matches(query_size: str, listing_size: str) -> bool:
+        q = query_size.lower().strip()
+        l = listing_size.lower().strip()
+        if q in l or l in q:
+            return True
+        # Common aliases
+        aliases = {
+            "m": ["medium", "med", "mediums"],
+            "s": ["small", "sml", "smalls"],
+            "l": ["large", "lrg", "larges"],
+            "xl": ["extra large", "extra-large"],
+        }
+        for key, vals in aliases.items():
+            if q == key and any(v in l for v in vals):
+                return True
+            if q in vals and key in l:
+                return True
+        return False
+
+    # 1. Load all listings
+    all_listings = load_listings()
+    filtered_listings = []
+
+    # 2. Filter by max_price and size
+    for item in all_listings:
+        if max_price is not None and item.get("price", 0.0) > max_price:
+            continue
+        if size is not None and not size_matches(size, item.get("size", "")):
+            continue
+        filtered_listings.append(item)
+
+    # 3. Score each remaining listing by keyword overlap with description
+    query_words = set(re.findall(r"\w+", description.lower()))
+    if not query_words:
+        return []
+
+    scored_listings = []
+    for item in filtered_listings:
+        title_lower = item.get("title", "").lower()
+        desc_lower = item.get("description", "").lower()
+        style_tags = [tag.lower() for tag in item.get("style_tags", [])]
+
+        score = 0
+        for word in query_words:
+            # Check for matches in title, style tags, and description
+            if word in title_lower:
+                score += 3
+            if any(word in tag for tag in style_tags):
+                score += 2
+            if word in desc_lower:
+                score += 1
+
+        # 4. Drop any listings with a score of 0
+        if score > 0:
+            scored_listings.append((score, item))
+
+    # 5. Sort by score, highest first, and return listing dicts
+    scored_listings.sort(key=lambda x: x[0], reverse=True)
+    return [item for score, item in scored_listings]
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
